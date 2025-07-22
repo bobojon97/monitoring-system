@@ -24,7 +24,7 @@ services:
     tty: true
     volumes:
       - ./frontend:/app
-      - /app/node_modules  # Исключаем node_modules из перезаписи
+      - /app/node_modules
 
   db:
     image: postgres:16
