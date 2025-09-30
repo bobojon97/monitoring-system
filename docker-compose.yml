@@ -9,11 +9,19 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/monitoring
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
     restart: always
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
 
   frontend:
     build: ./frontend
@@ -44,5 +52,62 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7
+    container_name: redis-broker
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  taskiq-worker:
+    build: ./backend
+    container_name: taskiq-worker
+    command: taskiq worker app.taskiq_config:broker app.tasks.ping_devices -w 2
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/monitoring
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=Asia/Dushanbe
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./backend/app:/app/app
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  taskiq-scheduler:
+    build: ./backend
+    container_name: taskiq-scheduler
+    command: python -m app.run_scheduler
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/monitoring
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=Asia/Dushanbe
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    volumes:
+      - ./backend/app:/app/app
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+
 volumes:
   postgres_data:
+  redis_data:
